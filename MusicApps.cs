@@ -82,7 +82,7 @@ internal static class MusicApps
     }
 
     public static void Launch(MusicApp app) =>
-        Start("explorer.exe", $"shell:AppsFolder\\{app.AppId}");
+        Start("explorer.exe", $"\"shell:AppsFolder\\{app.AppId}\"");
 
     public static void OpenYouTubeMusicInBrowser() => Start(YouTubeMusicUrl, null);
 
