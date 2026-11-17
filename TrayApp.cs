@@ -36,8 +36,12 @@ internal sealed class TrayApp : ApplicationContext
         _widget.PartClicked += OnPartClicked;
         _widget.ContextMenuRequested += p => ShowMenu(_menu, p, MenuLook.AtPointer(TaskbarEdge));
         _widget.WheelScrolled += delta => ChangeVolume(Math.Sign(delta) * WheelVolumeStep);
-        _widget.SeekRequested += fraction =>
-            RunAsync(() => _media.SeekAsync(TimeSpan.FromTicks((long)(_media.Duration.Ticks * (double)fraction))));
+        _widget.SeekRequested += fraction => RunAsync(async () =>
+        {
+            await _media.SeekAsync(TimeSpan.FromTicks((long)(_media.Duration.Ticks * (double)fraction)));
+            // A refused seek gives the line back; while paused nothing else would draw that.
+            _widget.Render();
+        });
         // YouTube sources: like / YouTube playlists. With MuSync installed: any track can go to the Garmin.
         _widget.PlaylistButtonVisible = () => _media.HasSession && (_media.IsYouTubeCapableSource || MuSync.IsAvailable);
         _media.Changed += (_, _) =>

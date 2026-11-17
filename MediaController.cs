@@ -22,10 +22,15 @@ internal sealed class MediaController : IDisposable
     private bool _refreshAgain;
     private bool _disposed;
     private readonly CoverMemory _covers = new();
+    private readonly SeekHold _seek = new();
     private int _announced; // set on Windows' threads
     private TimeSpan _startTime;
     private TimeSpan _position;
-    private DateTimeOffset _positionUpdatedAt;
+    // When the app measured _position; none when it never said.
+    private DateTimeOffset? _positionUpdatedAt;
+
+    // An app that never sets the time leaves it at Windows' zero, the year 1601: nothing before this is one.
+    private static readonly DateTimeOffset EarliestRealTime = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     public MediaController(Control owner) => _owner = owner;
 
@@ -61,10 +66,16 @@ internal sealed class MediaController : IDisposable
         get
         {
             if (Duration <= TimeSpan.Zero) return TimeSpan.Zero;
-            var p = _position;
-            if (IsPlaying && _positionUpdatedAt.Year > 2000)
+            var now = DateTimeOffset.Now;
+            TimeSpan p;
+            if (_seek.Position(now, IsPlaying) is TimeSpan held)
             {
-                p += DateTimeOffset.Now - _positionUpdatedAt;
+                p = held;
+            }
+            else
+            {
+                p = _position;
+                if (IsPlaying && _positionUpdatedAt is DateTimeOffset measured) p += now - measured;
             }
             return p < TimeSpan.Zero ? TimeSpan.Zero : p > Duration ? Duration : p;
         }
@@ -108,6 +119,8 @@ internal sealed class MediaController : IDisposable
     public async Task SeekAsync(TimeSpan position)
     {
         if (_session is null || !CanSeek) return;
+        // Shown at once and held: the app goes on reporting the old position for a moment.
+        _seek.Request(position, DateTimeOffset.Now);
         try
         {
             if (await _session.TryChangePlaybackPositionAsync((_startTime + position).Ticks))
@@ -115,10 +128,15 @@ internal sealed class MediaController : IDisposable
                 _position = position;
                 _positionUpdatedAt = DateTimeOffset.Now;
             }
+            else
+            {
+                _seek.Cancel();
+            }
         }
         catch (Exception)
         {
             // Session went away; the next refresh picks that up.
+            _seek.Cancel();
         }
     }
 
@@ -192,6 +210,7 @@ internal sealed class MediaController : IDisposable
             Unhook();
             _session = picked;
             _sessionId = pickedId;
+            _seek.Cancel();
             Hook();
         }
 
@@ -216,8 +235,11 @@ internal sealed class MediaController : IDisposable
             _startTime = timeline.StartTime;
             var duration = timeline.EndTime - timeline.StartTime;
             Duration = duration > TimeSpan.Zero ? duration : TimeSpan.Zero;
-            _position = timeline.Position - timeline.StartTime;
-            _positionUpdatedAt = timeline.LastUpdatedTime;
+            if (_seek.Accepts(timeline.LastUpdatedTime, DateTimeOffset.Now))
+            {
+                _position = timeline.Position - timeline.StartTime;
+                _positionUpdatedAt = timeline.LastUpdatedTime < EarliestRealTime ? null : timeline.LastUpdatedTime;
+            }
             CanSeek = controls.IsPlaybackPositionEnabled && Duration > TimeSpan.Zero;
 
             // Taken before asking: an announcement that comes meanwhile counts for the next refresh.
