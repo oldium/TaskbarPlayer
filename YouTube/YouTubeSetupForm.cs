@@ -17,6 +17,7 @@ internal sealed class YouTubeSetupForm : Form
     public YouTubeSetupForm(YouTubeService service)
     {
         _service = service;
+        bool light = DialogLook.AppsAreLight();
 
         SuspendLayout();
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -54,7 +55,7 @@ internal sealed class YouTubeSetupForm : Form
         {
             Location = new Point(16, 320),
             Size = new Size(488, 36),
-            ForeColor = Color.DimGray,
+            ForeColor = DialogLook.Dim(light),
         };
 
         _connect = new Button { Location = new Point(318, 360), Size = new Size(100, 30), Text = Strings.Connect };
@@ -64,6 +65,7 @@ internal sealed class YouTubeSetupForm : Form
         AcceptButton = _connect;
         CancelButton = cancel;
         Controls.AddRange([intro, link, idLabel, _clientId, secretLabel, _clientSecret, _status, _connect, cancel]);
+        DialogLook.Apply(this, light);
         ResumeLayout(performLayout: true);
     }
 

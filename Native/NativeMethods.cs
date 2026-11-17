@@ -406,6 +406,13 @@ internal static class NativeMethods
         }
     }
 
+    /// <summary>Has Windows draw a window's title bar in dark.</summary>
+    public static void DarkTitleBar(IntPtr hwnd)
+    {
+        int on = 1;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref on, sizeof(int));
+    }
+
     public static void StyleFlyout(IntPtr hwnd, bool dark, Color edge)
     {
         int value = dark ? 1 : 0;
