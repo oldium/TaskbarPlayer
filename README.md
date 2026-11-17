@@ -16,7 +16,7 @@ English by default; Dutch (Nederlands) can be selected from the menu.
 | 🔊 click | Volume slider with mute button |
 | Mouse wheel over the player | Volume up/down |
 | Timeline (thin bar under the title) | Click or drag to seek; the second line shows the time (`1:23 / 3:45`) |
-| Album art / title | Click: choose which app to control, or start a music app. Hover: the full title, artist, album and length |
+| Album art / title | Click: bring the app that is playing to the front. Hover: the full title, artist, album and length |
 | Nothing playing? Click the player or ⏯ | Start one of your installed music apps |
 | ＋ | YouTube Music: like the song or add it to one of your playlists. With MuSync: send it to a Garmin playlist |
 | Right-click | Menu: source, display, position, show art/title, start with Windows, YouTube account, language, exit |

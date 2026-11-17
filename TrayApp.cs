@@ -118,6 +118,9 @@ internal sealed class TrayApp : ApplicationContext
             case WidgetPart.Volume: ToggleVolumePopup(screenRect); break;
             case WidgetPart.AddToPlaylist: ShowPlaylistMenu(screenRect); break;
             case WidgetPart.Info:
+                // To the app that plays. Which app to control is chosen in the right-click menu; the choice is
+                // offered here only when the app cannot be shown.
+                if (_media.HasSession && _media.SourceAppId is string source && SourceWindow.Show(source)) break;
                 ShowPopupMenu(_media.HasSession ? FillSourceItems : FillLaunchItems, screenRect);
                 break;
         }
