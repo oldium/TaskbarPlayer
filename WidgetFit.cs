@@ -26,6 +26,13 @@ internal readonly record struct WidgetFit(bool Text, bool Cover, bool PreviousNe
     }
 
     /// <summary>
+    /// Whether the playlist button is wanted: only where something is set up behind it. For a source that can be
+    /// YouTube that is a connected YouTube account; MuSync, once installed, takes any source.
+    /// </summary>
+    public static bool WantsPlaylist(bool hasSession, bool youTubeSource, bool youTubeConnected, bool muSync) =>
+        hasSession && ((youTubeSource && youTubeConnected) || muSync);
+
+    /// <summary>
     /// The steps from everything that is wanted down to the play button alone; the first that fits is shown.
     /// </summary>
     public static IReadOnlyList<WidgetFit> Steps(bool text, bool cover, bool playlist)

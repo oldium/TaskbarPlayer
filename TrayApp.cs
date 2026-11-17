@@ -43,7 +43,8 @@ internal sealed class TrayApp : ApplicationContext
             _widget.Render();
         });
         // YouTube sources: like / YouTube playlists. With MuSync installed: any track can go to the Garmin.
-        _widget.PlaylistButtonVisible = () => _media.HasSession && (_media.IsYouTubeCapableSource || MuSync.IsAvailable);
+        _widget.PlaylistButtonVisible = () =>
+            WidgetFit.WantsPlaylist(_media.HasSession, _media.IsYouTubeCapableSource, _youtube.IsConnected, MuSync.IsAvailable);
         _media.Changed += (_, _) =>
         {
             _widget.UpdateLayout(); // the playlist button comes and goes with the source
@@ -159,12 +160,6 @@ internal sealed class TrayApp : ApplicationContext
         bool musicOnly = _media.SourceName == "YouTube Music";
         bool youtubeSource = _media.IsYouTubeCapableSource;
         if (string.IsNullOrWhiteSpace(title)) return;
-
-        if (youtubeSource && !_youtube.IsConnected && !MuSync.IsAvailable)
-        {
-            OpenYouTubeSetup();
-            return;
-        }
 
         var menu = new ContextMenuStrip();
         ToolStripMenuItem? loading = null;
@@ -404,6 +399,9 @@ internal sealed class TrayApp : ApplicationContext
         {
             if (_youtube.IsConnected) await _youtube.DisconnectAsync();
             else OpenYouTubeSetup();
+            // The playlist button comes and goes with the account.
+            _widget.UpdateLayout();
+            _widget.Render();
         };
         _menu.Opening += (_, _) => youtube.Text = _youtube.IsConnected ? Strings.DisconnectYouTube : Strings.ConnectYouTube;
 

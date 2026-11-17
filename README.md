@@ -36,8 +36,9 @@ display comes back.
 
 ## YouTube Music: like / add to playlist
 
-When the source is YouTube Music (the installed web app, or a browser), a ＋ button appears. It uses the
-official YouTube Data API with **your own** free Google Cloud project, so no shared keys are involved.
+When the source is YouTube Music (the installed web app, or a browser) and a YouTube account is connected, a ＋
+button appears. It uses the official YouTube Data API with **your own** free Google Cloud project, so no shared
+keys are involved.
 One-time setup (also shown in the app):
 
 1. In the [Google Cloud Console](https://console.cloud.google.com/apis/library/youtube.googleapis.com), create a
@@ -46,7 +47,7 @@ One-time setup (also shown in the app):
    test user, or click **Publish app**. Apps left in *Testing* get sign-ins that expire after 7 days. A published
    but unverified app shows a "Google hasn't verified this app" warning; choose *Advanced → continue*.
 3. **Clients → Create client → Desktop app**.
-4. Click ＋ in the player (or right-click → *Connect YouTube account…*), paste the Client ID and secret, and sign in.
+4. Right-click the player → *Connect YouTube account…*, paste the Client ID and secret, and sign in.
 
 Notes:
 - Windows media sessions don't expose the video id, so the track is found by searching for title + artist,
