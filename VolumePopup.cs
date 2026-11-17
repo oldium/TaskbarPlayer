@@ -1,3 +1,4 @@
+using System.Drawing.Drawing2D;
 using TaskbarPlayer.Native;
 
 namespace TaskbarPlayer;
@@ -9,6 +10,7 @@ internal sealed class VolumePopup : Form
     private readonly SliderBar _slider;
     private readonly Label _percent;
     private readonly bool _light;
+    private bool _keyboardUsed;
 
     public VolumePopup(bool light)
     {
@@ -28,25 +30,38 @@ internal sealed class VolumePopup : Form
         ForeColor = fore;
         KeyPreview = true;
 
-        _mute = new Button
+        _mute = new QuietButton
         {
             Font = new Font(Glyphs.FontFamilyName, 13F),
             Bounds = new Rectangle(8, 8, 38, 36),
             FlatStyle = FlatStyle.Flat,
             ForeColor = fore,
             BackColor = back,
-            TabStop = false,
+            TabIndex = 1,
             UseMnemonic = false,
+            AccessibleName = Strings.Mute,
         };
         _mute.FlatAppearance.BorderSize = 0;
         _mute.FlatAppearance.MouseOverBackColor = light ? Color.FromArgb(230, 230, 230) : Color.FromArgb(60, 60, 60);
         _mute.FlatAppearance.MouseDownBackColor = light ? Color.FromArgb(215, 215, 215) : Color.FromArgb(75, 75, 75);
         _mute.Click += (_, _) => MuteToggled?.Invoke();
+        _mute.Paint += (_, e) =>
+        {
+            // Where the keyboard focus is, once the keyboard is in use.
+            if (!_mute.Focused || !_keyboardUsed) return;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var pen = new Pen(fore, 2f);
+            using var ring = Glyphs.RoundedRect(new RectangleF(1, 1, _mute.Width - 2, _mute.Height - 2), 4);
+            e.Graphics.DrawPath(pen, ring);
+        };
 
         _slider = new SliderBar
         {
             Bounds = new Rectangle(50, 9, 170, 34),
             WheelStep = 0.02f,
+            KeyStep = 0.02f,
+            TabIndex = 0,
+            AccessibleName = Strings.Volume,
             BackColor = back,
             TrackColor = light ? Color.FromArgb(200, 200, 200) : Color.FromArgb(90, 90, 90),
             FillColor = light ? Color.FromArgb(0, 95, 184) : Color.FromArgb(76, 194, 255),
@@ -80,14 +95,28 @@ internal sealed class VolumePopup : Form
         _percent.Text = muted ? "–" : $"{(int)Math.Round(level * 100)}";
     }
 
-    public void ShowAbove(Rectangle anchor, Rectangle taskbar)
+    /// <summary>
+    /// Where the popup goes: a gap away from the taskbar on the screen's side, centred on its button, and a gap
+    /// inside the screen.
+    /// </summary>
+    internal static Point PlaceBy(Size popup, Rectangle anchor, TaskbarEdge edge, Rectangle taskbar, Rectangle screen, int gap)
+    {
+        int x = Math.Clamp(anchor.Left + anchor.Width / 2 - popup.Width / 2, screen.Left + gap, screen.Right - popup.Width - gap);
+        int y = Math.Clamp(anchor.Top + anchor.Height / 2 - popup.Height / 2, screen.Top + gap, screen.Bottom - popup.Height - gap);
+        return edge switch
+        {
+            TaskbarEdge.Top => new Point(x, taskbar.Bottom + gap),
+            TaskbarEdge.Left => new Point(taskbar.Right + gap, y),
+            TaskbarEdge.Right => new Point(taskbar.Left - popup.Width - gap, y),
+            _ => new Point(x, taskbar.Top - popup.Height - gap),
+        };
+    }
+
+    public void ShowBy(Rectangle anchor, TaskbarEdge edge, Rectangle taskbar)
     {
         var area = Screen.FromRectangle(taskbar).Bounds;
-        int gap = (int)(12 * DeviceDpi / 96f);
-        int x = Math.Clamp(anchor.Left + anchor.Width / 2 - Width / 2, area.Left + gap, area.Right - Width - gap);
-        bool taskbarAtTop = taskbar.Top <= area.Top + 1 && taskbar.Bottom < area.Bottom - 1;
-        int y = taskbarAtTop ? taskbar.Bottom + gap : taskbar.Top - Height - gap;
-        Location = new Point(x, y);
+        Location = PlaceBy(Size, anchor, edge, taskbar, area, (int)(12 * DeviceDpi / 96f));
+        _keyboardUsed = false;
         Show();
         Activate();
         _slider.Focus();
@@ -96,7 +125,7 @@ internal sealed class VolumePopup : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        NativeMethods.StyleFlyout(Handle, dark: !_light);
+        NativeMethods.StyleFlyout(Handle, dark: !_light, FlyoutColors.SolidEdge(_light));
     }
 
     protected override void OnDeactivate(EventArgs e)
@@ -107,11 +136,20 @@ internal sealed class VolumePopup : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        _keyboardUsed = true;
+        _mute.Invalidate();
         if (keyData == Keys.Escape)
         {
             HideNow();
             return true;
         }
+        if (keyData == Keys.M)
+        {
+            MuteToggled?.Invoke();
+            return true;
+        }
+        // The arrow keys change the volume wherever the focus is; Tab moves between the slider and mute.
+        if (_slider.HandleKey(keyData)) return true;
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
@@ -130,5 +168,13 @@ internal sealed class VolumePopup : Form
             cp.ExStyle |= NativeMethods.WS_EX_TOOLWINDOW;
             return cp;
         }
+    }
+
+    // A flat button without WinForms' own focus marks, which do not suit a dark background.
+    private sealed class QuietButton : Button
+    {
+        protected override bool ShowFocusCues => false;
+
+        public override void NotifyDefault(bool value) => base.NotifyDefault(false);
     }
 }

@@ -8,13 +8,19 @@ internal static class Log
     private static readonly string FilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TaskbarPlayer", "log.txt");
 
+    private static readonly Lock Gate = new();
+
     public static void Write(string message)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            if (File.Exists(FilePath) && new FileInfo(FilePath).Length > 256 * 1024) File.Delete(FilePath);
-            File.AppendAllText(FilePath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+            // The taskbar probe logs from a background thread.
+            lock (Gate)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+                if (File.Exists(FilePath) && new FileInfo(FilePath).Length > 256 * 1024) File.Delete(FilePath);
+                File.AppendAllText(FilePath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}");
+            }
         }
         catch (Exception)
         {

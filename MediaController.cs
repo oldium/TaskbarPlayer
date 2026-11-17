@@ -40,6 +40,11 @@ internal sealed class MediaController : IDisposable
     public string? SourceName => _sessionId is null ? null : FriendlyName(_sessionId);
     public string? Title { get; private set; }
     public string? Artist { get; private set; }
+    public string? Album { get; private set; }
+
+    /// <summary>The track's number on its album and the album's track count; 0 where the music app says nothing.</summary>
+    public int TrackNumber { get; private set; }
+    public int TrackCount { get; private set; }
 
     /// <summary>Album art. Ownership passes to the consumer, which disposes it once replaced.</summary>
     public Image? Cover { get; private set; }
@@ -218,8 +223,11 @@ internal sealed class MediaController : IDisposable
             var props = await session.TryGetMediaPropertiesAsync();
             if (props is null) return;
 
-            Title = props.Title;
-            Artist = string.IsNullOrWhiteSpace(props.Artist) ? props.AlbumArtist : props.Artist;
+            Title = MediaText.Clean(props.Title);
+            Artist = MediaText.Clean(string.IsNullOrWhiteSpace(props.Artist) ? props.AlbumArtist : props.Artist);
+            Album = MediaText.Clean(props.AlbumTitle);
+            TrackNumber = props.TrackNumber;
+            TrackCount = props.AlbumTrackCount;
 
             string key = $"{_sessionId}\n{props.Title}\n{props.Artist}\n{props.AlbumTitle}";
             if (key != _mediaKey)
@@ -313,6 +321,9 @@ internal sealed class MediaController : IDisposable
     {
         Title = null;
         Artist = null;
+        Album = null;
+        TrackNumber = 0;
+        TrackCount = 0;
         Cover = null;
         IsPlaying = false;
         IsPaused = false;

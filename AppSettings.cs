@@ -34,9 +34,10 @@ internal sealed class AppSettings
                 return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Corrupt or unreadable settings: fall back to defaults.
+            Log.Write($"Settings unreadable, using defaults: {ex.Message}");
         }
         return new AppSettings();
     }

@@ -16,7 +16,7 @@ English by default; Dutch (Nederlands) can be selected from the menu.
 | 🔊 click | Volume slider with mute button |
 | Mouse wheel over the player | Volume up/down |
 | Timeline (thin bar under the title) | Click or drag to seek; the second line shows the time (`1:23 / 3:45`) |
-| Album art / title | Choose which app to control, or start a music app |
+| Album art / title | Click: choose which app to control, or start a music app. Hover: the full title, artist, album and length |
 | Nothing playing? Click the player or ⏯ | Start one of your installed music apps |
 | ＋ | YouTube Music: like the song or add it to one of your playlists. With MuSync: send it to a Garmin playlist |
 | Right-click | Menu: source, display, position, show art/title, start with Windows, YouTube account, language, exit |
@@ -24,6 +24,11 @@ English by default; Dutch (Nederlands) can be selected from the menu.
 The player finds free room in the taskbar by itself (left, between Widgets and Start, or right, between your
 app icons and the system tray) and follows along when apps open or close. When room is tight the title goes
 first, then only the buttons remain. Use *Position* to pin it to one side.
+
+**Taskbar at the left or right edge** (Windows 11 versions that allow moving it): the player becomes a column
+of album art, timeline and buttons. Title and artist do not fit there; hover over the album art to see them.
+Tooltips, the volume slider and the menus open beside the taskbar, and *Position* offers above or below the
+app icons.
 
 **Multiple displays**: pick the taskbar via *Display*. This requires *Show my taskbar on all displays* in
 Windows Settings. If that display is disconnected, the player moves to the main taskbar and returns when the
@@ -68,7 +73,8 @@ dotnet run -c Release
 
 Exit: right-click the player → *Exit*.
 Settings are stored in `%AppData%\TaskbarPlayer\settings.json`, a diagnostic log in
-`%LocalAppData%\TaskbarPlayer\log.txt`.
+`%LocalAppData%\TaskbarPlayer\log.txt` and the remembered taskbar layouts in
+`%LocalAppData%\TaskbarPlayer\layouts.json`.
 
 ## How it works
 
@@ -76,7 +82,9 @@ Settings are stored in `%AppData%\TaskbarPlayer\settings.json`, a diagnostic log
   displays), drawn with per-pixel alpha so it blends with the taskbar background. It re-attaches after an
   Explorer restart (`TaskbarCreated`).
 - **Free space**: the Windows 11 taskbar draws its icons in XAML, so their positions are read through
-  UI Automation on a background thread.
+  UI Automation on a background thread. That is done only when something signals a change (an app button
+  comes or goes, the taskbar or its tray moves, a taskbar setting changes), never at intervals. The edge the
+  taskbar is on and the icon alignment are read from the registry (`TaskbarLocation`, `TaskbarAl`).
 - **Media**: `GlobalSystemMediaTransportControlsSessionManager`, the same API behind the Windows media flyout.
   Without a session, plain media keys are sent.
 - **Volume**: Core Audio `IAudioEndpointVolume` on the default playback device.

@@ -26,8 +26,21 @@ internal static class Strings
     public static string Pause => T("Pause", "Pauzeren");
     public static string StartMusicApp => T("Start a music app", "Muziek-app starten");
     public static string Muted => T("Muted", "Gedempt");
+    public static string Volume => T("Volume", "Volume");
+    public static string AppName => "Taskbar Player";
+    public static string Timeline => T("Timeline", "Tijdlijn");
+    public static string Press => T("Press", "Indrukken");
+    public static string Mute => T("Mute", "Dempen");
     public static string VolumeTip(int percent) =>
         T($"Volume {percent}%  (scroll to change)", $"Volume {percent}%  (scrollen om te wijzigen)");
+
+    /// <summary>A track's place on its album; the count is 0 when the music app does not report it.</summary>
+    public static string TrackLabel(int number, int count) => count >= number
+        ? T($"Track {number} / {count}", $"Nummer {number} / {count}")
+        : T($"Track {number}", $"Nummer {number}");
+
+    public static string Time(TimeSpan time) =>
+        time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
 
     // Menus
     public static string Loading => T("(loading…)", "(laden…)");
@@ -46,6 +59,14 @@ internal static class Strings
     public static string PositionAuto => T("Automatic (where there is most room)", "Automatisch (waar de meeste ruimte is)");
     public static string PositionLeft => T("Left of the app icons", "Links van de app-iconen");
     public static string PositionRight => T("Right of the app icons", "Rechts van de app-iconen");
+    public static string PositionAbove => T("Above the app icons", "Boven de app-iconen");
+    public static string PositionBelow => T("Below the app icons", "Onder de app-iconen");
+
+    /// <summary>The fixed place toward Start, named as the taskbar runs: lying along an edge, or upright at a side.</summary>
+    public static string PositionBefore(bool uprightTaskbar) => uprightTaskbar ? PositionAbove : PositionLeft;
+
+    /// <summary>The fixed place toward the tray, named as the taskbar runs.</summary>
+    public static string PositionAfter(bool uprightTaskbar) => uprightTaskbar ? PositionBelow : PositionRight;
     public static string ShowCover => T("Show album art", "Albumhoes tonen");
     public static string ShowTitle => T("Show title and artist", "Titel en artiest tonen");
     public static string StartWithWindows => T("Start with Windows", "Starten met Windows");

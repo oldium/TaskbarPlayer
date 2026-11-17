@@ -21,18 +21,20 @@ internal sealed class TrayApp : ApplicationContext
     private bool _youtubeSetupOpen;
     private float _volume;
     private bool _muted;
+    private bool _volumeWatched;
 
     public TrayApp()
     {
         _ = _invoker.Handle; // gives the media controller a UI-thread marshalling target
+        Log.Write($"Started: placement {_settings.Placement}, monitor {_settings.Monitor ?? "main"}");
         Strings.Language = _settings.Language;
 
         _media = new MediaController(_invoker);
         _media.SetPreferredApp(_settings.PreferredSource);
 
-        _widget = new TaskbarWidget(_media, _settings);
+        _widget = new TaskbarWidget(_media, _settings, LayoutCache.Load());
         _widget.PartClicked += OnPartClicked;
-        _widget.ContextMenuRequested += p => ShowMenu(_menu, p);
+        _widget.ContextMenuRequested += p => ShowMenu(_menu, p, MenuLook.AtPointer(TaskbarEdge));
         _widget.WheelScrolled += delta => ChangeVolume(Math.Sign(delta) * WheelVolumeStep);
         _widget.SeekRequested += fraction =>
             RunAsync(() => _media.SeekAsync(TimeSpan.FromTicks((long)(_media.Duration.Ticks * (double)fraction))));
@@ -52,16 +54,37 @@ internal sealed class TrayApp : ApplicationContext
         RefreshVolume();
         _widget.Attach();
 
+        // Windows tells of volume changes on threads of its own; a late one may find the app already closing.
+        _volumeWatched = SystemVolume.Watch(() =>
+        {
+            try
+            {
+                _invoker.BeginInvoke(new Action(RefreshVolume));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        });
         _timer.Tick += (_, _) =>
         {
-            RefreshVolume();
+            // Asked for only where Windows would not tell.
+            if (!_volumeWatched) RefreshVolume();
             _widget.Tick();
         };
         _timer.Start();
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         _ = InitializeMediaAsync();
-        _ = MusicApps.RefreshAsync();
+        _ = ScanAppsAsync();
+    }
+
+    // What the scan finds can add the playlist button; nothing else would lay the widget out again.
+    private async Task ScanAppsAsync()
+    {
+        await MusicApps.RefreshAsync();
+        _widget.UpdateLayout();
+        _widget.Render();
     }
 
     private async Task InitializeMediaAsync()
@@ -101,7 +124,7 @@ internal sealed class TrayApp : ApplicationContext
         var menu = new ContextMenuStrip();
         fill(menu.Items);
         menu.Closed += (_, _) => _invoker.BeginInvoke(new Action(menu.Dispose));
-        ShowMenu(menu, new Point(anchor.Left, anchor.Top));
+        ShowMenuBy(menu, anchor);
     }
 
     private void FillLaunchItems(ToolStripItemCollection items)
@@ -116,7 +139,7 @@ internal sealed class TrayApp : ApplicationContext
             items.Add(new ToolStripMenuItem(Strings.OpenYouTubeMusicInBrowser, null, (_, _) => MusicApps.OpenYouTubeMusicInBrowser()));
         }
         // Pick up apps installed since the last scan, for next time.
-        _ = MusicApps.RefreshAsync();
+        _ = ScanAppsAsync();
     }
 
     // ---------------------------------------------------------------- YouTube Music playlists
@@ -171,7 +194,7 @@ internal sealed class TrayApp : ApplicationContext
         }
 
         menu.Closed += (_, _) => _invoker.BeginInvoke(new Action(menu.Dispose));
-        ShowMenu(menu, new Point(anchor.Left, anchor.Top));
+        ShowMenuBy(menu, anchor);
         if (loading is not null) _ = FillPlaylistsAsync(menu, loading, title, artist, musicOnly);
     }
 
@@ -311,7 +334,7 @@ internal sealed class TrayApp : ApplicationContext
         if ((DateTime.UtcNow - _volumePopup.HiddenAt).TotalMilliseconds < 300) return;
 
         _volumePopup.SetState(_volume, _muted);
-        _volumePopup.ShowAbove(anchor, _widget.TrayScreenBounds);
+        _volumePopup.ShowBy(anchor, TaskbarEdge, _widget.TrayScreenBounds);
     }
 
     // ---------------------------------------------------------------- menus
@@ -335,6 +358,9 @@ internal sealed class TrayApp : ApplicationContext
         placement.DropDownItems.AddRange([auto, left, right]);
         placement.DropDownOpening += (_, _) =>
         {
+            bool upright = TaskbarEdge is TaskbarEdge.Left or TaskbarEdge.Right;
+            left.Text = Strings.PositionBefore(upright);
+            right.Text = Strings.PositionAfter(upright);
             auto.Checked = _settings.Placement == WidgetPlacement.Auto;
             right.Checked = _settings.Placement == WidgetPlacement.Right;
             left.Checked = _settings.Placement == WidgetPlacement.Left;
@@ -429,11 +455,20 @@ internal sealed class TrayApp : ApplicationContext
         items.Add(launch);
     }
 
-    private void ShowMenu(ContextMenuStrip menu, Point screenPoint)
+    private TaskbarEdge TaskbarEdge => _widget.TaskbarEdgeNow(_widget.TrayScreenBounds);
+
+    private void ShowMenuBy(ContextMenuStrip menu, Rectangle part)
+    {
+        var (at, direction) = MenuLook.Beside(part, TaskbarEdge, _widget.TrayScreenBounds);
+        ShowMenu(menu, at, direction);
+    }
+
+    private void ShowMenu(ContextMenuStrip menu, Point screenPoint, ToolStripDropDownDirection direction)
     {
         // Menus dismiss on outside clicks only if we own the foreground window.
         NativeMethods.SetForegroundWindow(_messages.Handle);
-        menu.Show(screenPoint, ToolStripDropDownDirection.AboveRight);
+        MenuLook.Apply(menu, Glyphs.IsLightTaskbar());
+        menu.Show(screenPoint, direction);
     }
 
     private void SelectSource(string? appId)
@@ -462,7 +497,7 @@ internal sealed class TrayApp : ApplicationContext
             {
                 _settings.Monitor = target;
                 _settings.Save();
-                _widget.Tick(); // moves the widget to the other taskbar right away
+                _widget.Recheck(); // moves the widget to the other taskbar right away
             };
             items.Add(item);
         }
@@ -496,11 +531,17 @@ internal sealed class TrayApp : ApplicationContext
         _widget.Render();
     }
 
+    // A display came, went or changed: the chosen taskbar may be another one now.
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _invoker.BeginInvoke(new Action(_widget.Recheck));
+
     private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
     {
+        // Taskbar settings (icon alignment, the Widgets button) arrive as general ones and can move the icons.
+        bool mayMoveIcons = e.Category == UserPreferenceCategory.General;
         // Light/dark switch or DPI change: redraw on the UI thread.
         _invoker.BeginInvoke(new Action(() =>
         {
+            if (mayMoveIcons) _widget.Recheck();
             _widget.UpdateLayout();
             _widget.Render();
         }));
@@ -523,6 +564,8 @@ internal sealed class TrayApp : ApplicationContext
         if (disposing)
         {
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            SystemVolume.StopWatching();
             _timer.Dispose();
             _widget.Dispose();
             _media.Dispose();
