@@ -21,8 +21,8 @@ internal sealed class MediaController : IDisposable
     private bool _refreshing;
     private bool _refreshAgain;
     private bool _disposed;
-    private string? _mediaKey;
-    private bool _coverLoaded;
+    private readonly CoverMemory _covers = new();
+    private int _announced; // set on Windows' threads
     private TimeSpan _startTime;
     private TimeSpan _position;
     private DateTimeOffset _positionUpdatedAt;
@@ -220,7 +220,18 @@ internal sealed class MediaController : IDisposable
             _positionUpdatedAt = timeline.LastUpdatedTime;
             CanSeek = controls.IsPlaybackPositionEnabled && Duration > TimeSpan.Zero;
 
-            var props = await session.TryGetMediaPropertiesAsync();
+            // Taken before asking: an announcement that comes meanwhile counts for the next refresh.
+            bool announced = Interlocked.Exchange(ref _announced, 0) != 0;
+            GlobalSystemMediaTransportControlsSessionMediaProperties? props = null;
+            try
+            {
+                props = await session.TryGetMediaPropertiesAsync();
+            }
+            finally
+            {
+                // Not read: the announcement still stands, for the next refresh.
+                if (props is null && announced) Interlocked.Exchange(ref _announced, 1);
+            }
             if (props is null) return;
 
             Title = MediaText.Clean(props.Title);
@@ -230,26 +241,23 @@ internal sealed class MediaController : IDisposable
             TrackCount = props.AlbumTrackCount;
 
             string key = $"{_sessionId}\n{props.Title}\n{props.Artist}\n{props.AlbumTitle}";
-            if (key != _mediaKey)
+            switch (_covers.See(key, props.Thumbnail is not null, announced))
             {
-                _mediaKey = key;
-                _coverLoaded = false;
-                Cover = null;
-            }
+                case CoverStep.Clear:
+                    Cover = null;
+                    break;
 
-            // Apps often publish the artwork a moment after the title, so retry until we have it.
-            if (!_coverLoaded && props.Thumbnail is not null)
-            {
-                _coverLoaded = true;
-                var cover = await LoadCoverAsync(props.Thumbnail);
-                if (_mediaKey == key)
-                {
-                    Cover = cover;
-                }
-                else
-                {
-                    cover?.Dispose();
-                }
+                case CoverStep.Load:
+                    var (cover, picture) = await LoadCoverAsync(props.Thumbnail!);
+                    if (_covers.Take(key, picture))
+                    {
+                        Cover = cover;
+                    }
+                    else
+                    {
+                        cover?.Dispose();
+                    }
+                    break;
             }
         }
         catch (Exception)
@@ -299,7 +307,8 @@ internal sealed class MediaController : IDisposable
         }
     }
 
-    private static async Task<Image?> LoadCoverAsync(IRandomAccessStreamReference thumbnail)
+    // The picture and the bytes it was read from; neither when it cannot be read.
+    private static async Task<(Image? Cover, byte[]? Picture)> LoadCoverAsync(IRandomAccessStreamReference thumbnail)
     {
         try
         {
@@ -309,11 +318,11 @@ internal sealed class MediaController : IDisposable
             await stream.CopyToAsync(ms);
             ms.Position = 0;
             using var img = Image.FromStream(ms);
-            return new Bitmap(img);
+            return (new Bitmap(img), ms.ToArray());
         }
         catch (Exception)
         {
-            return null;
+            return (null, null);
         }
     }
 
@@ -331,8 +340,7 @@ internal sealed class MediaController : IDisposable
         CanNext = false;
         CanSeek = false;
         Duration = TimeSpan.Zero;
-        _mediaKey = null;
-        _coverLoaded = false;
+        _covers.Reset();
     }
 
     private void Hook()
@@ -366,7 +374,13 @@ internal sealed class MediaController : IDisposable
         Post();
     }
 
-    private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args) => Post();
+    private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
+    {
+        // The picture may be another now, also under the same title.
+        Interlocked.Exchange(ref _announced, 1);
+        Post();
+    }
+
     private void OnPlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) => Post();
     private void OnTimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args) => Post();
 
